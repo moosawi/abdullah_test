@@ -5,8 +5,19 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright AJB 2021"
 #property link      "https://www.mql5.com/en/users/1218858/seller#products"
-#property version   "1.5"
+#property version   "1.6"
 #property strict
+
+//--- Enums
+enum LotSizingMethod
+{
+   METHOD_MULTIPLIER = 0,      // Multiplier (Current)
+   METHOD_MARTINGALE = 1,      // Martingale
+   METHOD_ADD = 2,             // Add Fixed Amount
+   METHOD_REDUCE = 3,          // Reduce Fixed Amount
+   METHOD_LARGEST_FIRST = 4,   // Largest First then Reduce
+   METHOD_SMALLEST_FIRST = 5   // Smallest First then Increase
+};
 
 //--- Input parameters
 extern int            MagicNumber = 6711588;                      // Magic Number
@@ -25,7 +36,12 @@ extern double         StopLoss_Manual = 1000;                     // SL in $ whe
 extern double         StopLoss_Percentage = 5;                    // SL in % when Percentage
 extern double         GridDistance = 50;                          // Distance Between Orders
 extern double         DistanceMultiplier = 2.0;                    // Multiplier for grid distance
-extern double         Multiplier = 1.2;                           // Multiplier
+extern LotSizingMethod LotMethod = METHOD_MULTIPLIER;             // Lot Sizing Method
+extern double         Multiplier = 1.2;                           // Multiplier (for Multiplier & Martingale methods)
+extern double         LotAddValue = 0.01;                         // Lot Add/Reduce Value (for Add/Reduce methods)
+extern double         LargestLotSize = 1.0;                       // Largest Lot Size (for Largest First method)
+extern double         SmallestLotSize = 0.01;                     // Smallest Lot Size (for Smallest First method)
+extern double         LotStepValue = 0.01;                        // Lot Increase/Decrease Step (for Largest/Smallest First)
 extern int            MaxOrders = 0;                              // Max Orders, 0=Unlimited
 extern double         MaxOrdersLotsPerChart = 0;                  // Max Lots Per Chart, 0=Unlimited
 extern double         MaxLotsPerOrder = 1;                      // Max Lots Per Order, 0=Unlimited
@@ -828,13 +844,55 @@ double CalculateLotSize(double fixedLot, bool useMM, double risk, double balance
 }
 
 //+------------------------------------------------------------------+
-//| Calculate next lot size based on multiplier                      |
+//| Calculate next lot size based on selected method                 |
 //+------------------------------------------------------------------+
 double CalculateNextLotSize(int orderCount, double lastLot)
 {
-   // Always base the calculations on g_StartLot (manual lot size)
-   // instead of propagating the initial hedge lot size
-   double lot = MathPow(Multiplier, orderCount) * g_StartLot;
+   double lot = 0;
+
+   switch(LotMethod)
+   {
+      case METHOD_MULTIPLIER:
+         // Multiply by a factor (current method)
+         lot = MathPow(Multiplier, orderCount) * g_StartLot;
+         break;
+
+      case METHOD_MARTINGALE:
+         // Classic Martingale - multiply by factor after each order
+         lot = MathPow(Multiplier, orderCount) * g_StartLot;
+         break;
+
+      case METHOD_ADD:
+         // Add fixed amount to each order
+         lot = g_StartLot + (LotAddValue * orderCount);
+         break;
+
+      case METHOD_REDUCE:
+         // Reduce fixed amount from each order
+         lot = g_StartLot - (LotAddValue * orderCount);
+         // Ensure we don't go below minimum
+         if(lot < MarketInfo(Symbol(), MODE_MINLOT))
+            lot = MarketInfo(Symbol(), MODE_MINLOT);
+         break;
+
+      case METHOD_LARGEST_FIRST:
+         // Start with largest lot, then reduce
+         lot = LargestLotSize - (LotStepValue * orderCount);
+         // Ensure we don't go below minimum
+         if(lot < MarketInfo(Symbol(), MODE_MINLOT))
+            lot = MarketInfo(Symbol(), MODE_MINLOT);
+         break;
+
+      case METHOD_SMALLEST_FIRST:
+         // Start with smallest lot, then increase
+         lot = SmallestLotSize + (LotStepValue * orderCount);
+         break;
+
+      default:
+         // Default to multiplier method
+         lot = MathPow(Multiplier, orderCount) * g_StartLot;
+         break;
+   }
 
    // Enforce max lot limit if set
    if(MaxLotsPerOrder > 0 && lot > MaxLotsPerOrder)
