@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright AJB 2021"
 #property link      "https://www.mql5.com/en/users/1218858/seller#products"
-#property version   "1.4"
+#property version   "1.5"
 #property strict
 
 //--- Input parameters
@@ -33,6 +33,10 @@ extern double         StopOutProtectionLevel = 30;                // Margin leve
 extern bool           EnableMaxLossProtection = false;            // Enable max loss protection
 extern double         MaxLossAmount = 2000;                       // Max loss amount in $ to close all trades
 extern int            WaitMinutesAfterLoss = 30;                  // Wait time in minutes before reopening trades
+extern bool           EnableStopLoss = false;                     // Enable Stop Loss
+extern bool           PercentageSL = false;                       // Use Percentage SL (true) or Manual SL (false)
+extern double         StopLoss_Manual = 1000;                     // SL in $ when Manual
+extern double         StopLoss_Percentage = 5;                    // SL in % when Percentage
 
 // Global variables
 string limitationComment = "";
@@ -178,6 +182,20 @@ void OnTick()
       if(EnableMaxLossProtection && CheckMaxLoss())
       {
          Print("Max loss reached: $", g_TotalProfit, ". Closing all trades.");
+         CloseAllOrders();
+         ResetOrderInfo();
+
+         // Start waiting period
+         g_InWaitingPeriod = true;
+         g_WaitStartTime = TimeCurrent();
+         Print("Starting waiting period of ", WaitMinutesAfterLoss, " minutes.");
+         return;
+      }
+
+      // Check for stop loss
+      if(EnableStopLoss && CheckStopLoss())
+      {
+         Print("Stop loss reached: $", g_TotalProfit, ". Closing all trades.");
          CloseAllOrders();
          ResetOrderInfo();
 
@@ -853,6 +871,41 @@ bool CheckMaxLoss()
    // Check if total profit is negative and exceeds max loss
    if(g_TotalProfit < 0 && MathAbs(g_TotalProfit) >= MaxLossAmount)
    {
+      return true;
+   }
+
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//| Check if stop loss has been reached                              |
+//+------------------------------------------------------------------+
+bool CheckStopLoss()
+{
+   if(g_BuyCount + g_SellCount == 0)
+      return false;
+
+   double sl = 0;
+
+   if(PercentageSL)
+   {
+      if(StopLoss_Percentage <= 0)
+         return false;
+
+      sl = g_StartBalance * StopLoss_Percentage / 100;
+   }
+   else
+   {
+      if(StopLoss_Manual <= 0)
+         return false;
+
+      sl = StopLoss_Manual;
+   }
+
+   // Check if total profit is negative and exceeds stop loss
+   if(g_TotalProfit < 0 && MathAbs(g_TotalProfit) >= sl)
+   {
+      Print("SL: $", g_TotalProfit);
       return true;
    }
 
