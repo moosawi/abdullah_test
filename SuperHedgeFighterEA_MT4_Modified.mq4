@@ -19,6 +19,10 @@ extern double         InitialHedgeLotSize = 0.2;                 // Initial hedg
 extern bool           PercentageTP = false;                       // Use Percentage TP (true) or Manual TP (false)
 extern double         TakeProfit_Manual = 10;                      // TP in $ when Manual
 extern double         TakeProfit_Percentage = 1;                  // TP in % when Percentage
+extern bool           EnableStopLoss = false;                     // Enable Stop Loss
+extern bool           PercentageSL = false;                       // Use Percentage SL (true) or Manual SL (false)
+extern double         StopLoss_Manual = 1000;                     // SL in $ when Manual
+extern double         StopLoss_Percentage = 5;                    // SL in % when Percentage
 extern double         GridDistance = 50;                          // Distance Between Orders
 extern double         DistanceMultiplier = 2.0;                    // Multiplier for grid distance
 extern double         Multiplier = 1.2;                           // Multiplier
@@ -33,10 +37,6 @@ extern double         StopOutProtectionLevel = 30;                // Margin leve
 extern bool           EnableMaxLossProtection = false;            // Enable max loss protection
 extern double         MaxLossAmount = 2000;                       // Max loss amount in $ to close all trades
 extern int            WaitMinutesAfterLoss = 30;                  // Wait time in minutes before reopening trades
-extern bool           EnableStopLoss = false;                     // Enable Stop Loss
-extern bool           PercentageSL = false;                       // Use Percentage SL (true) or Manual SL (false)
-extern double         StopLoss_Manual = 1000;                     // SL in $ when Manual
-extern double         StopLoss_Percentage = 5;                    // SL in % when Percentage
 
 // Global variables
 string limitationComment = "";
@@ -192,17 +192,12 @@ void OnTick()
          return;
       }
 
-      // Check for stop loss
+      // Check for stop loss (NO waiting period - normal SL behavior)
       if(EnableStopLoss && CheckStopLoss())
       {
          Print("Stop loss reached: $", g_TotalProfit, ". Closing all trades.");
          CloseAllOrders();
          ResetOrderInfo();
-
-         // Start waiting period
-         g_InWaitingPeriod = true;
-         g_WaitStartTime = TimeCurrent();
-         Print("Starting waiting period of ", WaitMinutesAfterLoss, " minutes.");
          return;
       }
 
