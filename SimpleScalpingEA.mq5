@@ -111,16 +111,50 @@ void OnTick()
 }
 
 //+------------------------------------------------------------------+
+//| COUNT OPEN POSITIONS FOR THIS EA                                  |
+//+------------------------------------------------------------------+
+int CountOpenPositions()
+{
+   int count = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(PositionSelectByTicket(ticket))
+      {
+         if(PositionGetString(POSITION_SYMBOL) == _Symbol &&
+            PositionGetInteger(POSITION_MAGIC) == MagicNumber)
+         {
+            count++;
+         }
+      }
+   }
+   return count;
+}
+
+//+------------------------------------------------------------------+
 //| CHECK FOR ENTRY SIGNAL                                            |
 //+------------------------------------------------------------------+
 void CheckForEntrySignal()
 {
-   // Don't trade if we already traded this candle
-   if(tradedThisCandle) return;
+   // SAFETY CHECK #1: Don't trade if we already traded this candle
+   if(tradedThisCandle)
+   {
+      Print("Safety: Already traded this candle");
+      return;
+   }
 
-   // Don't open new trade if we still have one open
+   // SAFETY CHECK #2: Count all open positions with our magic number
+   int openPositions = CountOpenPositions();
+   if(openPositions > 0)
+   {
+      Print("Safety: Already have ", openPositions, " open position(s)");
+      return; // We already have a trade open
+   }
+
+   // SAFETY CHECK #3: Double-check our current ticket
    if(currentTicket > 0 && PositionSelectByTicket(currentTicket))
    {
+      Print("Safety: Current ticket still open");
       return; // Trade still open
    }
 
@@ -282,6 +316,8 @@ void CloseTradeAtCandleEnd()
 //+------------------------------------------------------------------+
 void UpdateChartComment()
 {
+   int openPositions = CountOpenPositions();
+
    string info = "\n";
    info += "===== SIMPLE SCALPING EA =====\n";
    info += "Symbol: " + _Symbol + "\n";
@@ -290,6 +326,7 @@ void UpdateChartComment()
    info += "TP: " + IntegerToString(TakeProfitPips) + " pips | ";
    info += "SL: " + IntegerToString(StopLossPips) + " pips\n";
    info += "Min Candle: " + IntegerToString(MinimumCandleSizePips) + " pips\n";
+   info += "Open Positions: " + IntegerToString(openPositions) + "\n";
    info += "----------------------------\n";
 
    // Current trade status

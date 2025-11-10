@@ -104,17 +104,52 @@ void OnTick()
 }
 
 //+------------------------------------------------------------------+
+//| COUNT OPEN ORDERS FOR THIS EA                                     |
+//+------------------------------------------------------------------+
+int CountOpenOrders()
+{
+   int count = 0;
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+      {
+         if(OrderSymbol() == Symbol() && OrderMagicNumber() == MagicNumber)
+         {
+            count++;
+         }
+      }
+   }
+   return count;
+}
+
+//+------------------------------------------------------------------+
 //| CHECK FOR ENTRY SIGNAL                                            |
 //+------------------------------------------------------------------+
 void CheckForEntrySignal()
 {
-   // Don't trade if we already traded this candle
-   if(tradedThisCandle) return;
+   // SAFETY CHECK #1: Don't trade if we already traded this candle
+   if(tradedThisCandle)
+   {
+      Print("Safety: Already traded this candle");
+      return;
+   }
 
-   // Don't open new trade if we still have one open
+   // SAFETY CHECK #2: Count all open orders with our magic number
+   int openOrders = CountOpenOrders();
+   if(openOrders > 0)
+   {
+      Print("Safety: Already have ", openOrders, " open order(s)");
+      return; // We already have a trade open
+   }
+
+   // SAFETY CHECK #3: Double-check our current ticket
    if(currentTicket > 0 && OrderSelect(currentTicket, SELECT_BY_TICKET))
    {
-      if(OrderCloseTime() == 0) return; // Trade still open
+      if(OrderCloseTime() == 0)
+      {
+         Print("Safety: Current ticket still open");
+         return; // Trade still open
+      }
    }
 
    // Get previous candle data (the completed candle before current one)
@@ -287,6 +322,8 @@ void CloseTradeAtCandleEnd()
 //+------------------------------------------------------------------+
 void UpdateChartComment()
 {
+   int openOrders = CountOpenOrders();
+
    string info = "\n";
    info += "===== SIMPLE SCALPING EA =====\n";
    info += "Symbol: " + Symbol() + "\n";
@@ -295,6 +332,7 @@ void UpdateChartComment()
    info += "TP: " + IntegerToString(TakeProfitPips) + " pips | ";
    info += "SL: " + IntegerToString(StopLossPips) + " pips\n";
    info += "Min Candle: " + IntegerToString(MinimumCandleSizePips) + " pips\n";
+   info += "Open Orders: " + IntegerToString(openOrders) + "\n";
    info += "----------------------------\n";
 
    // Current trade status
