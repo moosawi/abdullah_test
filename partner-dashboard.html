@@ -825,6 +825,7 @@
                             <option value="">All Types</option>
                             <option value="Pro-Standart">Pro-Standart</option>
                             <option value="Pro">Pro</option>
+                            <option value="Pro-Cent">Pro-Cent</option>
                             <option value="ECN">ECN</option>
                             <option value="Prime">Prime</option>
                         </select>
@@ -1115,6 +1116,9 @@
                     loadClientsData(),
                     loadCommissionData()
                 ]);
+
+                // Load commission trend chart with real data
+                await updateCommissionTrendChart();
 
                 showAlert('Dashboard loaded successfully!', 'success');
                 startAutoRefresh();
@@ -1641,15 +1645,40 @@
             });
         }
 
-        function updateCommissionTrendChart() {
-            // Mock data for 7-day trend
+        async function updateCommissionTrendChart() {
+            // Only update chart if we have valid API credentials
+            if (!config.accountNumber || !config.apiKey) {
+                return;
+            }
+
+            // Fetch real commission data for the last 7 days
             const labels = [];
             const data = [];
-            for (let i = 6; i >= 0; i--) {
-                const date = new Date();
-                date.setDate(date.getDate() - i);
-                labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-                data.push(Math.random() * 1000 + 500); // Mock data
+
+            try {
+                for (let i = 6; i >= 0; i--) {
+                    const date = new Date();
+                    date.setDate(date.getDate() - i);
+                    const dateStr = date.toISOString().split('T')[0];
+                    labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+
+                    try {
+                        const xmlDoc = await apiCall('/commission/get', { date: dateStr, on_page: 1000 });
+                        const tickets = xmlDoc.querySelectorAll('ticket');
+                        let dayTotal = 0;
+                        tickets.forEach(ticket => {
+                            const amount = parseFloat(ticket.querySelector('amount')?.textContent || 0);
+                            dayTotal += amount;
+                        });
+                        data.push(dayTotal);
+                    } catch (error) {
+                        // If API call fails, use 0 for that day
+                        data.push(0);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load commission trend data:', error);
+                return;
             }
 
             const ctx = document.getElementById('commissionTrendChart');
@@ -1919,8 +1948,8 @@
             });
         }
 
-        // Initialize commission trend chart
-        updateCommissionTrendChart();
+        // Initialize commission trend chart only if we have API credentials
+        // This will be called after data is loaded in initializeDashboard()
 
         // Close modals on outside click
         window.onclick = function(event) {
