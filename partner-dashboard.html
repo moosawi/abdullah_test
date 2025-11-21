@@ -706,6 +706,22 @@
                     <label>Auto-refresh Interval (seconds)</label>
                     <input type="number" id="refreshInterval" value="300" min="60">
                 </div>
+                <div class="form-group" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #444;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="useCorsProxy" checked style="margin-right: 8px; width: auto;">
+                        Use CORS Proxy (Enable this if you get "Failed to fetch" errors)
+                    </label>
+                    <small style="color: #888; display: block; margin-top: 5px;">
+                        CORS proxy helps bypass browser security restrictions when accessing the RoboForex API
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label>CORS Proxy URL</label>
+                    <input type="text" id="corsProxyUrl" value="https://corsproxy.io/?" placeholder="https://corsproxy.io/?">
+                    <small style="color: #888; display: block; margin-top: 5px;">
+                        Alternative proxies: https://api.allorigins.win/raw?url= or https://corsproxy.org/?
+                    </small>
+                </div>
                 <button class="btn" onclick="saveConfig()">💾 Save Configuration</button>
                 <button class="btn btn-secondary" onclick="closeConfigModal()">Cancel</button>
             </div>
@@ -973,7 +989,9 @@
         let config = {
             accountNumber: '',
             apiKey: '',
-            refreshInterval: 300
+            refreshInterval: 300,
+            useCorsProxy: true,  // Enable CORS proxy by default
+            corsProxyUrl: 'https://corsproxy.io/?'  // CORS proxy service
         };
         let allClients = [];
         let filteredClients = [];
@@ -1001,6 +1019,8 @@
             document.getElementById('accountNumber').value = config.accountNumber;
             document.getElementById('apiKey').value = config.apiKey;
             document.getElementById('refreshInterval').value = config.refreshInterval;
+            document.getElementById('useCorsProxy').checked = config.useCorsProxy;
+            document.getElementById('corsProxyUrl').value = config.corsProxyUrl;
         }
 
         function closeConfigModal() {
@@ -1011,9 +1031,16 @@
             config.accountNumber = document.getElementById('accountNumber').value.trim();
             config.apiKey = document.getElementById('apiKey').value.trim();
             config.refreshInterval = parseInt(document.getElementById('refreshInterval').value);
+            config.useCorsProxy = document.getElementById('useCorsProxy').checked;
+            config.corsProxyUrl = document.getElementById('corsProxyUrl').value.trim();
 
             if (!config.accountNumber || !config.apiKey) {
                 showAlert('Please enter both Account Number and API Key', 'error');
+                return;
+            }
+
+            if (config.useCorsProxy && !config.corsProxyUrl) {
+                showAlert('Please enter a CORS Proxy URL or disable CORS Proxy', 'error');
                 return;
             }
 
@@ -1026,7 +1053,15 @@
         function loadConfigFromStorage() {
             const stored = localStorage.getItem('roboforex_config');
             if (stored) {
-                config = JSON.parse(stored);
+                const loadedConfig = JSON.parse(stored);
+                // Merge with defaults to handle missing properties
+                config = {
+                    accountNumber: loadedConfig.accountNumber || '',
+                    apiKey: loadedConfig.apiKey || '',
+                    refreshInterval: loadedConfig.refreshInterval || 300,
+                    useCorsProxy: loadedConfig.useCorsProxy !== undefined ? loadedConfig.useCorsProxy : true,
+                    corsProxyUrl: loadedConfig.corsProxyUrl || 'https://corsproxy.io/?'
+                };
             }
         }
 
@@ -1076,6 +1111,11 @@
 
         // API calls
         async function apiCall(endpoint, params = {}) {
+            // Validate credentials before making API call
+            if (!config.accountNumber || !config.apiKey) {
+                throw new Error('API credentials not configured. Please configure your Account Number and API Key in settings.');
+            }
+
             const baseUrl = 'https://my.roboforex.com/api';
             const queryParams = new URLSearchParams({
                 account_id: config.accountNumber,
@@ -1083,8 +1123,14 @@
                 ...params
             });
 
+            // Build the API URL
+            const apiUrl = `${baseUrl}${endpoint}?${queryParams}`;
+
+            // Use CORS proxy if enabled
+            const fetchUrl = config.useCorsProxy ? `${config.corsProxyUrl}${encodeURIComponent(apiUrl)}` : apiUrl;
+
             try {
-                const response = await fetch(`${baseUrl}${endpoint}?${queryParams}`, {
+                const response = await fetch(fetchUrl, {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/xml'
@@ -1092,16 +1138,41 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    // Provide more specific error messages
+                    if (response.status === 401 || response.status === 403) {
+                        throw new Error(`Authentication failed (${response.status}). Please check your Account Number and API Key.`);
+                    } else if (response.status === 404) {
+                        throw new Error(`API endpoint not found (${response.status}): ${endpoint}`);
+                    } else if (response.status >= 500) {
+                        throw new Error(`RoboForex API server error (${response.status}). Please try again later.`);
+                    } else {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
                 }
 
                 const xmlText = await response.text();
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
 
+                // Check for XML parsing errors
+                const parseError = xmlDoc.querySelector('parsererror');
+                if (parseError) {
+                    throw new Error('Failed to parse API response. Invalid XML format.');
+                }
+
                 return xmlDoc;
             } catch (error) {
                 console.error('API call failed:', error);
+
+                // Enhance error message for common issues
+                if (error.message.includes('Failed to fetch')) {
+                    if (!config.useCorsProxy) {
+                        throw new Error('Network error: Failed to fetch data. This might be a CORS issue. Try enabling CORS Proxy in settings.');
+                    } else {
+                        throw new Error('Network error: Failed to fetch data. Please check your internet connection or try a different CORS proxy.');
+                    }
+                }
+
                 throw error;
             }
         }
